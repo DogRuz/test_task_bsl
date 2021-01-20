@@ -1,0 +1,62 @@
+version: "3"
+
+services:
+  db:
+    image: postgres
+    restart: on-failure:3
+    environment:
+      - POSTGRES_DB=bank
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin
+  web:
+    build: .
+    restart: on-failure:3
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+  migration:
+    build: .
+    restart: on-failure:3
+    command: python manage.py migrate --noinput
+    volumes:
+      - .:/code
+    depends_on:
+      - db
+  load_data:
+    build: .
+    restart: on-failure:3
+    command: python manage.py loaddata db.json
+    volumes:
+      - .:/code
+    depends_on:
+      - db
+  broker:
+    image: "rabbitmq:3-management"
+    hostname: rabbit1
+    environment: &env
+      RABBITMQ_ERLANG_COOKIE: "SWQOKODSQALRPCLNMEQG"
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_DEFAULT_VHOST: "/"
+      CELERY_BROKER_URL: "amqp://guest:guest@broker:5672"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    expose:
+      - "5672"
+  beat_worker:
+    build: .
+    restart: on-failure:3
+    command: celery -A test_task_bsl beat -s ./celerybeat-schedule --pidfile=
+    environment:
+      <<: *env
+  worker:
+    build: .
+    restart: on-failure:3
+    command: celery -A test_task_bsl worker  -P solo -E
+    environment:
+      <<: *env
